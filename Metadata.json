@@ -1,0 +1,20 @@
+{
+    "Author": "Saswata Pandit",
+    "ContentSize": 133452,
+    "ContentUrl": "https://raw.githubusercontent.com/azureautomation/Migrate-from-Azure-Automation-Update-Management-to-Azure-Update-Manager/main/Migration.ps1",
+    "DownloadCount": 0,
+    "Id": "azureautomation/Migrate-from-Azure-Automation-Update-Management-to-Azure-Update-Manager",
+    "IsFederated": true,
+    "IsWorkflow": false,
+    "Popularity": 4,
+    "RaterCount": 0,
+    "Rating": 0.0,
+    "ReleaseDate": "2024-01-10T00:00:00",
+    "RunbookKind": 5,
+    "RunbookKindString": "PowerShell",
+    "Summary": "This Powershell script is designed to migrate machines and schedules onboarded to the legacy Azure Automation Update Management solution to the latest Azure Update Manager.",
+    "Title": "Migrate from Azure Automation Update Management to Azure Update Manager",
+    "UpdatedDate": "2024-01-10T00:00:00",
+    "Url": "https://github.com/azureautomation/Migrate-from-Azure-Automation-Update-Management-to-Azure-Update-Manager",
+    "UserTags": "Powershell, Azure Automation"
+}
