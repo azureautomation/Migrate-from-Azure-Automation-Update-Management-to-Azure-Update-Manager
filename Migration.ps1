@@ -31,6 +31,7 @@
         
     .PARAMETER ResourceGroupNameForMaintenanceConfigurations
         Optional
+        Please provide resource group name when migrating software update configurations.
         The resource group name should not be more than 36 characters.
         The resource group name which will be used for creating a resource group in the same region as the automation account. The maintenance configurations for the migrated software update configurations from the automation account will be residing here.
     
@@ -49,10 +50,10 @@ param(
     [String]$UserManagedServiceIdentityClientId,
 
     [Parameter(Mandatory = $false)]
-    [bool]$EnablePeriodicAssessmentForMachinesOnboardedToUpdateManagement=$false,
+    [bool]$EnablePeriodicAssessmentForMachinesOnboardedToUpdateManagement=$true,
 
     [Parameter(Mandatory = $false)]
-    [bool]$MigrateSchedulesAndEnablePeriodicAssessmentForLinkedMachines=$false,
+    [bool]$MigrateSchedulesAndEnablePeriodicAssessmentForLinkedMachines=$true,
 
     [Parameter(Mandatory = $false)]
     [String]$ResourceGroupNameForMaintenanceConfigurations
@@ -172,6 +173,7 @@ $ResourceGroupPath = "{0}/resourceGroups/{1}"
 $Unknown = "Unknown"
 $UnhandledException = "UnhandledException"
 $NotOnboardedToArcErrorCode = "NotOnboardedToArc"
+$NotFoundErrorCode = "404"
 
 # Error messages.
 $NotOnboardedToArcErrorMessage = "The machine is not onboarded to ARC. Onboard your machine to ARC to migrate it to AUM, more details here: https://aka.ms/OnboardToArc"
@@ -259,7 +261,7 @@ class MachineReadinessData
                 This function will add/edit machine readiness data.
         
             .PARAMETER resourceId
-                ARM resourceId of the machine.		
+                ARM resourceId of the machine.      
         
             .PARAMETER computerName
                 Computer name.
@@ -348,7 +350,7 @@ class SoftwareUpdateConfigurationMigrationData
                 This function will update dynamic azure queries data in regards to software update configuration.
         
             .PARAMETER hasDynamicAzureQueries
-                Whether software update configuration has dynamic azure queries or not.		
+                Whether software update configuration has dynamic azure queries or not.     
         
             .PARAMETER allDynamicAzureQueriesSuccessfullyResolved
                 Whether all dynamic azure queries successfully resolved against ARG to get the machines or not.
@@ -378,7 +380,7 @@ class SoftwareUpdateConfigurationMigrationData
                 This function will add/edit machine readiness data in regards to software update configuration.
         
             .PARAMETER resourceId
-                ARM resourceId of the machine.		
+                ARM resourceId of the machine.      
         
             .PARAMETER isConfigAssignmentRequired
                 Machine attached to schedule or picked up dynamically at run time.
@@ -597,7 +599,7 @@ function Write-Telemetry
         Telemetry levels can be "Informational", "Warning", "Error" or "Verbose".
     
     .PARAMETER Message
-		Log message to be written.
+        Log message to be written.
     
     .PARAMETER Level
         Log level.
@@ -631,18 +633,18 @@ function Write-Telemetry
 function Parse-ArmId
 {
     <#
-		.SYNOPSIS
-			Parses ARM resource id.
-	
-		.DESCRIPTION
-			This function parses ARM id to return subscription, resource group, resource name, etc.
-	
-		.PARAMETER ResourceId
-			ARM resourceId of the machine.		
-	
-		.EXAMPLE
-			Parse-ArmId -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
+        .SYNOPSIS
+            Parses ARM resource id.
+    
+        .DESCRIPTION
+            This function parses ARM id to return subscription, resource group, resource name, etc.
+    
+        .PARAMETER ResourceId
+            ARM resourceId of the machine.      
+    
+        .EXAMPLE
+            Parse-ArmId -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
     param(
         [Parameter(Mandatory = $true, Position = 1)]
         [String]$ResourceId
@@ -660,45 +662,45 @@ function Parse-ArmId
 
 function Invoke-RetryWithOutput
 {
-	<#
-		.SYNOPSIS
-			Generic retry logic.
-	
-		.DESCRIPTION
-			This command will perform the action specified until the action generates no errors, unless the retry limit has been reached.
-	
-		.PARAMETER Command
-			Accepts an Action object.
-			You can create a script block by enclosing your script within curly braces.		
-	
-		.PARAMETER Retry
-			Number of retries to attempt.
-	
-		.PARAMETER Delay
-			The maximum delay (in seconds) between each attempt. The default is 60 second.
-	
-		.EXAMPLE
-			$cmd = { If ((Get-Date) -lt (Get-Date -Second 59)) { Get-Object foo } Else { Write-Host 'ok' } }
-			Invoke-RetryWithOutput -Command $cmd -Retry 61
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[ScriptBlock]$Command,
-	
-		[Parameter(Mandatory = $false, Position = 2)]
-		[ValidateRange(0, [UInt32]::MaxValue)]
-		[UInt32]$Retry = 3,
-	
-		[Parameter(Mandatory = $false, Position = 3)]
-		[ValidateRange(0, [UInt32]::MaxValue)]
-		[UInt32]$Delay = 60
-	)
-	
+    <#
+        .SYNOPSIS
+            Generic retry logic.
+    
+        .DESCRIPTION
+            This command will perform the action specified until the action generates no errors, unless the retry limit has been reached.
+    
+        .PARAMETER Command
+            Accepts an Action object.
+            You can create a script block by enclosing your script within curly braces.     
+    
+        .PARAMETER Retry
+            Number of retries to attempt.
+    
+        .PARAMETER Delay
+            The maximum delay (in seconds) between each attempt. The default is 60 second.
+    
+        .EXAMPLE
+            $cmd = { If ((Get-Date) -lt (Get-Date -Second 59)) { Get-Object foo } Else { Write-Host 'ok' } }
+            Invoke-RetryWithOutput -Command $cmd -Retry 61
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [ScriptBlock]$Command,
+    
+        [Parameter(Mandatory = $false, Position = 2)]
+        [ValidateRange(0, [UInt32]::MaxValue)]
+        [UInt32]$Retry = 3,
+    
+        [Parameter(Mandatory = $false, Position = 3)]
+        [ValidateRange(0, [UInt32]::MaxValue)]
+        [UInt32]$Delay = 60
+    )
+    
     $ErrorActionPreferenceToRestore = $ErrorActionPreference
     $ErrorActionPreference = "Stop"
-		
+        
     for ($i = 0; $i -lt $Retry; $i++) 
     {
         $exceptionMessage = ""
@@ -713,7 +715,7 @@ function Invoke-RetryWithOutput
         catch [Exception] 
         {
             $exceptionMessage = $_.Exception.Message
-				
+                
             if ($Global:Error.Count -gt 0) 
             {
                 $Global:Error.RemoveAt(0)
@@ -738,44 +740,44 @@ function Invoke-RetryWithOutput
 function Invoke-AzRestApiWithRetry
 {
    <#
-		.SYNOPSIS
-			Wrapper around Invoke-AzRestMethod.
-	
-		.DESCRIPTION
-			This function calls Invoke-AzRestMethod with retries.
-	
-		.PARAMETER Params
-			Parameters to the cmdlet.
+        .SYNOPSIS
+            Wrapper around Invoke-AzRestMethod.
+    
+        .DESCRIPTION
+            This function calls Invoke-AzRestMethod with retries.
+    
+        .PARAMETER Params
+            Parameters to the cmdlet.
 
         .PARAMETER Payload
-			Payload.
+            Payload.
 
-		.PARAMETER Retry
-			Number of retries to attempt.
-	
-		.PARAMETER Delay
-			The maximum delay (in seconds) between each attempt. The default is 60 second.
+        .PARAMETER Retry
+            Number of retries to attempt.
+    
+        .PARAMETER Delay
+            The maximum delay (in seconds) between each attempt. The default is 60 second.
             
-		.EXAMPLE
-			Invoke-AzRestApiWithRetry -Params @{SubscriptionId = "xxxx" ResourceGroup = "rgName" ResourceName = "resourceName" ResourceProvider = "Microsoft.Compute" ResourceType = "virtualMachines"} -Payload "{'location': 'westeurope'}"
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[System.Collections.Hashtable]$Params,
+        .EXAMPLE
+            Invoke-AzRestApiWithRetry -Params @{SubscriptionId = "xxxx" ResourceGroup = "rgName" ResourceName = "resourceName" ResourceProvider = "Microsoft.Compute" ResourceType = "virtualMachines"} -Payload "{'location': 'westeurope'}"
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [System.Collections.Hashtable]$Params,
 
         [Parameter(Mandatory = $false, Position = 2)]
-		[Object]$Payload = $null,
+        [Object]$Payload = $null,
 
         [Parameter(Mandatory = $false, Position = 3)]
-		[ValidateRange(0, [UInt32]::MaxValue)]
-		[UInt32]$Retry = 3,
-	
-		[Parameter(Mandatory = $false, Position = 4)]
-		[ValidateRange(0, [UInt32]::MaxValue)]
-		[UInt32]$Delay = 60
-	)
+        [ValidateRange(0, [UInt32]::MaxValue)]
+        [UInt32]$Retry = 3,
+    
+        [Parameter(Mandatory = $false, Position = 4)]
+        [ValidateRange(0, [UInt32]::MaxValue)]
+        [UInt32]$Delay = 60
+    )
 
     if ($Payload)
     {
@@ -783,7 +785,7 @@ function Invoke-AzRestApiWithRetry
     }
 
     $retriableErrorCodes = @(409, 429)
-		
+        
     for ($i = 0; $i -lt $Retry; $i++)
     {
         $exceptionMessage = ""
@@ -825,43 +827,43 @@ function Invoke-AzRestApiWithRetry
 function Invoke-ArmApi-WithPath
 {
    <#
-		.SYNOPSIS
-			The function prepares payload for Invoke-AzRestMethod
-	
-		.DESCRIPTION
-			This function prepares payload for Invoke-AzRestMethod.
-	
-		.PARAMETER Path
-			ARM API path.
+        .SYNOPSIS
+            The function prepares payload for Invoke-AzRestMethod
+    
+        .DESCRIPTION
+            This function prepares payload for Invoke-AzRestMethod.
+    
+        .PARAMETER Path
+            ARM API path.
 
         .PARAMETER ApiVersion
-			API version.
+            API version.
 
         .PARAMETER Method
-			HTTP method.
+            HTTP method.
 
         .PARAMETER Payload
-			Paylod for API call.
-	
-		.EXAMPLE
-			Invoke-ArmApi-WithPath -Path "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}/start" -ApiVersion "2023-03-01" -method "PATCH" -Payload "{'location': 'westeurope'}"
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[String]$Path,
+            Paylod for API call.
+    
+        .EXAMPLE
+            Invoke-ArmApi-WithPath -Path "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}/start" -ApiVersion "2023-03-01" -method "PATCH" -Payload "{'location': 'westeurope'}"
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]$Path,
 
         [Parameter(Mandatory = $true, Position = 2)]
-		[String]$ApiVersion,
+        [String]$ApiVersion,
 
         [Parameter(Mandatory = $true, Position = 3)]
         [ValidateScript({ $_ -in $HttpMethods })]
-		[String]$Method,
+        [String]$Method,
 
         [Parameter(Mandatory = $false, Position =4)]
-		[Object]$Payload = $null
-	)
+        [Object]$Payload = $null
+    )
 
     $PathWithVersion = "{0}?api-version={1}"
     if ($Path.Contains("?"))
@@ -881,21 +883,21 @@ function Invoke-ArmApi-WithPath
 function Process-ApiResponse
 {
     <#
-		.SYNOPSIS
-			Process API response and returns data.
-	
-		.PARAMETER Response
-			Response object.
-	
-		.EXAMPLE
-			Process-ApiResponse -Response {"StatusCode": 200, "Content": "{\"properties\": {\"location\": \"westeurope\"}}" }
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[Object]$Response
-	)
+        .SYNOPSIS
+            Process API response and returns data.
+    
+        .PARAMETER Response
+            Response object.
+    
+        .EXAMPLE
+            Process-ApiResponse -Response {"StatusCode": 200, "Content": "{\"properties\": {\"location\": \"westeurope\"}}" }
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [Object]$Response
+    )
 
     $content = $null
     if ($Response.Content)
@@ -934,38 +936,38 @@ function Process-ApiResponse
 function Enable-PeriodicAssessment
 {
    <#
-		.SYNOPSIS
-			Enables periodic assessment.
-	
-		.DESCRIPTION
-			This command will set assessmentMode to "AutomaticByPlatform".
+        .SYNOPSIS
+            Enables periodic assessment.
+    
+        .DESCRIPTION
+            This command will set assessmentMode to "AutomaticByPlatform".
 
         .PARAMETER ResourceId
-			Resource Id.
+            Resource Id.
 
         .PARAMETER ResourceType
-			Resource type.
-	
-		.PARAMETER OsType
-			Operating system of VM.
-	
-		.EXAMPLE
-			Enable-PeriodicAssessment -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}" -ResourceType "AzureVM" -OsType "Windows"
-	#>
-	[CmdletBinding()]
-	Param
-	(
+            Resource type.
+    
+        .PARAMETER OsType
+            Operating system of VM.
+    
+        .EXAMPLE
+            Enable-PeriodicAssessment -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}" -ResourceType "AzureVM" -OsType "Windows"
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$ResourceId,
+        [String]$ResourceId,
 
         [Parameter(Mandatory = $true, Position = 2)]
         [ValidateScript({ $_ -in $ResourceTypes })]
-		[String]$ResourceType,
+        [String]$ResourceType,
 
-		[Parameter(Mandatory = $true, Position = 3)]
+        [Parameter(Mandatory = $true, Position = 3)]
         [ValidateScript({ $_ -in $OsTypes })]
-		[String]$OsType
-	)
+        [String]$OsType
+    )
     
     $payload = if ($OsType -eq $Windows) { $WindowsAssessmentMode } else { $LinuxAssessmentMode }
     $version = if ($ResourceType -eq $ArcServer) { $ArcVmApiVersion } else { $VmApiVersion }
@@ -990,21 +992,21 @@ function Enable-PeriodicAssessment
 function Escape-SpecialCharacters
 {
     <#
-		.SYNOPSIS
-			Escapes special characters.
-	
-		.PARAMETER Value
-			String to escape.
+        .SYNOPSIS
+            Escapes special characters.
+    
+        .PARAMETER Value
+            String to escape.
 
         .EXAMPLE
             Escape-SpecialCharacters -Value Value
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		[String]$Value
-	)
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        [String]$Value
+    )
 
     return $Value.Replace("\", "\\").Replace("""", "\""");
 }
@@ -1012,36 +1014,36 @@ function Escape-SpecialCharacters
 function Build-ResourceGraphQuery
 {
     <#
-		.SYNOPSIS
-			Build the resource graph query.
-	
-		.DESCRIPTION
-			This command will build and return the resource graph query in desired format.
-	
+        .SYNOPSIS
+            Build the resource graph query.
+    
+        .DESCRIPTION
+            This command will build and return the resource graph query in desired format.
+    
         .PARAMETER AzureQuery
-			Azure query.
+            Azure query.
 
         .PARAMETER OsType
-			OS type.
+            OS type.
 
         .PARAMETER ResourceGroups
             Resource groups.
 
-		.EXAMPLE
-			Build-ResourceGraphQuery -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows" -ResourceGroups "\"rg1\"", \"rg2\"" 
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		[Object]$AzureQuery,
+        .EXAMPLE
+            Build-ResourceGraphQuery -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows" -ResourceGroups "\"rg1\"", \"rg2\"" 
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        [Object]$AzureQuery,
 
         [Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
-		[String]$OsType,
+        [String]$OsType,
 
         [Parameter(Mandatory = $false, Position = 3, ValueFromPipeline = $true)]
-		[String]$ResourceGroups = $null
-	)
+        [String]$ResourceGroups = $null
+    )
 
     $query = ""
 
@@ -1064,7 +1066,7 @@ function Build-ResourceGraphQuery
 
     $query += ") " + ($ArgQueryOsTypeClause -f $OsType)
 
-    if ($null -ne $AzureQuery.tagSettings.tags -and $AzureQuery.tagSettings.tags.Count -gt 0)
+    if ($null -ne $AzureQuery.tagSettings.tags -and $AzureQuery.tagSettings.tags.psobject.properties.Value.Count -gt 0)
     {
         $lowerCaseTagsQuery = $ArgQueryProjectClause + $WhereClause
         $tagsKqlExpression = ""
@@ -1098,39 +1100,39 @@ function Build-ResourceGraphQuery
 function Get-ResourceGraphApiPayload
 {
     <#
-		.SYNOPSIS
-			Build the resource graph query API payload.
-	
-		.DESCRIPTION
-			This command will build the ARG query payload.
-	
+        .SYNOPSIS
+            Build the resource graph query API payload.
+    
+        .DESCRIPTION
+            This command will build the ARG query payload.
+    
         .PARAMETER AzureQuery
-			Azure query.
+            Azure query.
 
         .PARAMETER OsType
-			OS type.
+            OS type.
 
         .PARAMETER ResourceGroups
             Resource groups.
 
-		.EXAMPLE
-			Get-ResourceGraphApiPayload -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows" -SubscriptionId "xxxx-xxx" -ResourceGroups "\"rg1\"", \"rg2\"" 
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		[Object]$AzureQuery,
+        .EXAMPLE
+            Get-ResourceGraphApiPayload -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows" -SubscriptionId "xxxx-xxx" -ResourceGroups "\"rg1\"", \"rg2\"" 
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        [Object]$AzureQuery,
 
         [Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
-		[String]$OsType,
+        [String]$OsType,
 
         [Parameter(Mandatory = $true, Position = 3, ValueFromPipeline = $true)]
-		[String]$SubscriptionId,
+        [String]$SubscriptionId,
 
         [Parameter(Mandatory = $false, Position = 4, ValueFromPipeline = $true)]
-		$ResourceGroups = $null
-	)
+        $ResourceGroups = $null
+    )
 
     $subscriptionIdFormatted = $QuoteParam + $SubscriptionId + $QuoteParam
     $rgsFormatted = $null
@@ -1155,30 +1157,30 @@ function Get-ResourceGraphApiPayload
 function Process-DynamicAzureQueryToArgPayload
 {
    <#
-		.SYNOPSIS
-			Processes dynamic azure queries and converts to ARG payload.
-	
-		.DESCRIPTION
-			This command will process each dynamic query, construct corresponding ARG query payloads to make ARG calls.
-	
+        .SYNOPSIS
+            Processes dynamic azure queries and converts to ARG payload.
+    
+        .DESCRIPTION
+            This command will process each dynamic query, construct corresponding ARG query payloads to make ARG calls.
+    
         .PARAMETER AzureQuery
-			Azure query.
+            Azure query.
         
         .PARAMETER OsType
-			Operating system type.
+            Operating system type.
 
-		.EXAMPLE
-			Process-DynamicAzureQueryToArgPayload -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows"      
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		$AzureQueries,
+        .EXAMPLE
+            Process-DynamicAzureQueryToArgPayload -AzureQuery {"scope" : "" , "tagSettings" : {"tag1": ["tag1Value1","tag1Value2"],"tag2": ["tag2Value1","tag2Value2"]}, "filterOperator" : "", "locations" : ""} -OsType "Windows"      
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        $AzureQueries,
 
         [Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
-		[String]$OsType
-	)
+        [String]$OsType
+    )
 
     $payloadList = [System.Collections.Generic.HashSet[String]]@()
 
@@ -1237,31 +1239,31 @@ function Process-DynamicAzureQueryToArgPayload
 function Get-MachinesFromAzureDynamicQueries
 {
    <#
-		.SYNOPSIS
-			Get all azure machines from azure dynamic queries for the given software update configuration.
-	
-		.DESCRIPTION
-			This command will
+        .SYNOPSIS
+            Get all azure machines from azure dynamic queries for the given software update configuration.
+    
+        .DESCRIPTION
+            This command will
             1. Get all azure machines from azure dynamic queries for the given software update configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationMigrationData
-			Software update configuration migration data object.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configuration migration data object.
 
         .PARAMETER AzureQueries
-			List of azure queries.
-		
+            List of azure queries.
+        
         .EXAMPLE
-			Get-MachinesFromAzureDynamicQueries -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -AzureQueries AzureQueries
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		[SoftwareUpdateConfigurationMigrationData]$SoftwareUpdateConfigurationMigrationData,
+            Get-MachinesFromAzureDynamicQueries -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -AzureQueries AzureQueries
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        [SoftwareUpdateConfigurationMigrationData]$SoftwareUpdateConfigurationMigrationData,
 
-		[Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
-		[System.Collections.ArrayList]$AzureQueries
-	)
+        [Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
+        [System.Collections.ArrayList]$AzureQueries
+    )
 
     $resourceIds = [System.Collections.Generic.HashSet[String]]@()
     $payloadList = Process-DynamicAzureQueryToArgPayload -AzureQueries $AzureQueries -OsType $SoftwareUpdateConfigurationMigrationData.OperatingSystem
@@ -1310,31 +1312,31 @@ function Get-MachinesFromAzureDynamicQueries
 function Enable-ScheduledPatching
 {
    <#
-		.SYNOPSIS
-			Sets scheduled patching properties on Azure VM.
-	
-		.DESCRIPTION
-			This command will set patchMode to "AutomaticByPlatform" and bypass flag to true for Azure VM.
+        .SYNOPSIS
+            Sets scheduled patching properties on Azure VM.
+    
+        .DESCRIPTION
+            This command will set patchMode to "AutomaticByPlatform" and bypass flag to true for Azure VM.
         
         .PARAMETER ResourceId
-			Resource Id.
-	
-		.PARAMETER OsType
-			Operating system of VM.
-	
-		.EXAMPLE
-			Enable-ScheduledPatching -resourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}" -osType "Windows"
-	#>
-	[CmdletBinding()]
-	Param
-	(
+            Resource Id.
+    
+        .PARAMETER OsType
+            Operating system of VM.
+    
+        .EXAMPLE
+            Enable-ScheduledPatching -resourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Compute/virtualMachines/{vmName}" -osType "Windows"
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$ResourceId,
+        [String]$ResourceId,
 
-		[Parameter(Mandatory = $true, Position = 2)]
+        [Parameter(Mandatory = $true, Position = 2)]
         [ValidateScript({ $_ -in $OsTypes })]
-		[String]$OsType
-	)
+        [String]$OsType
+    )
     
     $payload = if ($OsType -eq $Windows) { $WindowsPatchSettingsOnAzure } else { $LinuxPatchSettingsOnAzure }
     $version = $VmApiVersion
@@ -1359,24 +1361,24 @@ function Enable-ScheduledPatching
 function Get-MachinesFromLogAnalytics
 {
    <#
-		.SYNOPSIS
-			Gets machines onboarded to updates solution from Log Analytics workspace.
-	
-		.DESCRIPTION
-			This command will return machines onboarded to UM from LA workspace.
+        .SYNOPSIS
+            Gets machines onboarded to updates solution from Log Analytics workspace.
+    
+        .DESCRIPTION
+            This command will return machines onboarded to UM from LA workspace.
 
         .PARAMETER ResourceId
-			Resource Id.
+            Resource Id.
 
-		.EXAMPLE
-			Get-MachinesFromLogAnalytics -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
-	[CmdletBinding()]
-	Param
-	(
+        .EXAMPLE
+            Get-MachinesFromLogAnalytics -ResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$ResourceId
-	)
+        [String]$ResourceId
+    )
     
     $armComponents = Parse-ArmId -ResourceId $ResourceId
     $script = {
@@ -1393,25 +1395,25 @@ function Get-MachinesFromLogAnalytics
 function Enable-PeriodicAssessmentForMachines
 {
     <#
-		.SYNOPSIS
-			Enables periodic assessment for machines passed as input.
-	
-		.DESCRIPTION
-			This function enables periodic assessment.
-	
-		.PARAMETER Machines
-			Machines.
-	
-		.EXAMPLE
-			Enable-PeriodicAssessmentForMachines -Machines Machines
-	#>
+        .SYNOPSIS
+            Enables periodic assessment for machines passed as input.
+    
+        .DESCRIPTION
+            This function enables periodic assessment.
+    
+        .PARAMETER Machines
+            Machines.
+    
+        .EXAMPLE
+            Enable-PeriodicAssessmentForMachines -Machines Machines
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
         [AllowEmptyCollection()]
-		[System.Collections.ArrayList]$Machines
-	)
+        [System.Collections.ArrayList]$Machines
+    )
 
     try
     {
@@ -1453,25 +1455,25 @@ function Enable-PeriodicAssessmentForMachines
 function Enable-PatchSettingsForMachines
 {
     <#
-		.SYNOPSIS
-			Enables patch settings for azure/arc machines passed.
-	
-		.DESCRIPTION
-			This function enables patch settings required for scheduled patching and periodic assessment.
-	
-		.PARAMETER Machines
-			Machines.
-	
-		.EXAMPLE
-			Enable-PatchSettingsForMachines -Machines Machines
-	#>
+        .SYNOPSIS
+            Enables patch settings for azure/arc machines passed.
+    
+        .DESCRIPTION
+            This function enables patch settings required for scheduled patching and periodic assessment.
+    
+        .PARAMETER Machines
+            Machines.
+    
+        .EXAMPLE
+            Enable-PatchSettingsForMachines -Machines Machines
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
         [AllowEmptyCollection()]
-		[System.Collections.ArrayList]$Machines
-	)
+        [System.Collections.ArrayList]$Machines
+    )
 
     try
     {
@@ -1515,24 +1517,24 @@ function Enable-PatchSettingsForMachines
 function Enable-PeriodicAssessmentOnAllMachines
 {
     <#
-		.SYNOPSIS
-			Enables periodic assessment for all machines.
-	
-		.DESCRIPTION
-			This function enables periodic assessment for all machines onboarded to Automation Update Management under this automation account.
-	
-		.PARAMETER AutomationAccountResourceId
-			Automation account resource id.
-	
-		.EXAMPLE
-			Enable-PeriodicAssessmentOnAllMachines -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
+        .SYNOPSIS
+            Enables periodic assessment for all machines.
+    
+        .DESCRIPTION
+            This function enables periodic assessment for all machines onboarded to Automation Update Management under this automation account.
+    
+        .PARAMETER AutomationAccountResourceId
+            Automation account resource id.
+    
+        .EXAMPLE
+            Enable-PeriodicAssessmentOnAllMachines -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId
-	)
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]$AutomationAccountResourceId
+    )
 
     $machines = [System.Collections.ArrayList]@($Global:Machines.Keys)
     Enable-PeriodicAssessmentForMachines -Machines $machines
@@ -1543,10 +1545,15 @@ function Enable-PeriodicAssessmentOnAllMachines
     $countOfAzureMachinesWhereFailedToEnablePeriodicAssessment = 0
     $countOfNonAzureArcMachinesWhereFailedToEnablePeriodicAssessment = 0
     $countOfNonAzureMachinesIgnored = 0
+    $countOfNotFoundMachines = 0
 
     foreach ($machine in $machines)
     {
-        if ($Global:Machines[$machine].ResourceType -eq $AzureVM)
+        if ($Global:Machines[$machine].ResourceType -ne $NonAzureMachine -and $Global:Machines[$machine].ErrorCode -match $NotFoundErrorCode)
+        {
+            $countOfNotFoundMachines++
+        }
+        elseif ($Global:Machines[$machine].ResourceType -eq $AzureVM)
         {
             if ($Global:Machines[$machine].PeriodicAssessmentStatus -eq $Succeeded)
             {
@@ -1579,7 +1586,7 @@ function Enable-PeriodicAssessmentOnAllMachines
         }
     }
 
-    Write-Output ("Total {0} machines found to be onboarded to Automation Update Management under automation account {1}." -f $countOfAllMachinesOnboardedToAutomationUpdateManagement, $AutomationAccountResourceId)
+    Write-Output ("Total {0} machines found to be onboarded to Automation Update Management under automation account {1}." -f ($countOfAllMachinesOnboardedToAutomationUpdateManagement - $countOfNotFoundMachines), $AutomationAccountResourceId)
     if ($countOfNonAzureMachinesIgnored -gt 0)
     {
         Write-Output ("{0} non-azure machines which are not onboarded to arc and ignored." -f $countOfNonAzureMachinesIgnored)
@@ -1605,24 +1612,24 @@ function Enable-PeriodicAssessmentOnAllMachines
 function Populate-AllMachinesOnboardedToUpdateManagement
 {
     <#
-		.SYNOPSIS
-			Gets all machines onboarded to Update Management under this automation account.
-	
-		.DESCRIPTION
-			This function gets all machines onboarded to Automation Update Management under this automation account using log analytics workspace.
-	
-		.PARAMETER AutomationAccountResourceId
-			Automation account resource id.
-	
-		.EXAMPLE
-			Populate-AllMachinesOnboardedToUpdateManagement -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
+        .SYNOPSIS
+            Gets all machines onboarded to Update Management under this automation account.
+    
+        .DESCRIPTION
+            This function gets all machines onboarded to Automation Update Management under this automation account using log analytics workspace.
+    
+        .PARAMETER AutomationAccountResourceId
+            Automation account resource id.
+    
+        .EXAMPLE
+            Populate-AllMachinesOnboardedToUpdateManagement -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId
-	)
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]$AutomationAccountResourceId
+    )
 
     try 
     {
@@ -1676,18 +1683,18 @@ function Populate-AllMachinesOnboardedToUpdateManagement
 function Set-MaintenanceConfigurationAssignmentForMachines
 {
     <#
-		.SYNOPSIS
-			Sets configuration assignments for the machines.
-	
-		.DESCRIPTION
-			This function sets configuration assignments for the machines in software update configuration to attach them to the maintenance configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationMigrationData
-			Software update configration migration data
-        	
-		.EXAMPLE
-			Set-MaintenanceConfigurationAssignmentForMachines -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData
-	#>
+        .SYNOPSIS
+            Sets configuration assignments for the machines.
+    
+        .DESCRIPTION
+            This function sets configuration assignments for the machines in software update configuration to attach them to the maintenance configuration.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configration migration data
+            
+        .EXAMPLE
+            Set-MaintenanceConfigurationAssignmentForMachines -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData
+    #>
     [CmdletBinding()]
     param 
     (
@@ -1704,7 +1711,7 @@ function Set-MaintenanceConfigurationAssignmentForMachines
             $machineReadinessDataForSoftwareUpdateConfiguration = $SoftwareUpdateConfigurationMigrationData.MachinesReadinessDataForSoftwareUpdateConfiguration[$resourceId]
             if ($machineReadinessDataForSoftwareUpdateConfiguration.IsConfigAssignmentRequired)
             {
-                if ($Global:Machines[$resourceId].ResourceType -ne $NonAzureMachine)
+                if ($Global:Machines[$resourceId].ResourceType -ne $NonAzureMachine -and $Global:Machines[$resourceId].ErrorCode -notmatch $NotFoundErrorCode)
                 {
                     $version = if ($Global:Machines[$resourceId].ResourceType -eq $ArcServer) { $ArcVmApiVersion } else { $VmApiVersion }
                     $response = Invoke-ArmApi-WithPath -Path $Global:Machines[$resourceId].ResourceId -ApiVersion $version -Method $GET
@@ -1760,21 +1767,21 @@ function Set-MaintenanceConfigurationAssignmentForMachines
 function Validate-DynamicScopeConfigurationAlreadyAssigned
 {
     <#
-		.SYNOPSIS
-			Checks if a dynamic scope configuration assignment already made for the maintenance config or not.
-	
-		.DESCRIPTION
-			This function checks if a dynamic scope configuration assignment already made for the maintenance config or not.
-	
-		.PARAMETER DynamicScopeConfigurationAssignments
-			Dynamic scope configuration assignments
+        .SYNOPSIS
+            Checks if a dynamic scope configuration assignment already made for the maintenance config or not.
+    
+        .DESCRIPTION
+            This function checks if a dynamic scope configuration assignment already made for the maintenance config or not.
+    
+        .PARAMETER DynamicScopeConfigurationAssignments
+            Dynamic scope configuration assignments
 
         .PARAMETER MaintenanceConfigurationDynamicScopingPayload
             Maintenance configuration dynamic scoping payload
             
-		.EXAMPLE
-			Validate-DynamicScopeConfigurationAlreadyAssigned -DynamicScopeConfigurationAssignments DynamicScopeConfigurationAssignments -MaintenanceConfigurationDynamicScopingPayload MaintenanceConfigurationDynamicScopingPayload -Scope $Scope
-	#>
+        .EXAMPLE
+            Validate-DynamicScopeConfigurationAlreadyAssigned -DynamicScopeConfigurationAssignments DynamicScopeConfigurationAssignments -MaintenanceConfigurationDynamicScopingPayload MaintenanceConfigurationDynamicScopingPayload -Scope $Scope
+    #>
     [CmdletBinding()]
     param 
     (
@@ -1926,14 +1933,14 @@ function Validate-DynamicScopeConfigurationAlreadyAssigned
 function Set-DynamicScopeForMaintenanceConfiguration
 {
     <#
-		.SYNOPSIS
-			Sets dynamic scope for maintenance configuration.
-	
-		.DESCRIPTION
-			This function sets configuration assignments for dynamic scoping for the azure dynamic queries in software update configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationMigrationData
-			Software update configration migration data.
+        .SYNOPSIS
+            Sets dynamic scope for maintenance configuration.
+    
+        .DESCRIPTION
+            This function sets configuration assignments for dynamic scoping for the azure dynamic queries in software update configuration.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configration migration data.
 
         .PARAMETER SoftwareUpdateConfiguration
             Software update configuration
@@ -1941,9 +1948,9 @@ function Set-DynamicScopeForMaintenanceConfiguration
         .PARAMETER Scope
             Scope of dynamic assignment.
 
-		.EXAMPLE
-			Set-DynamicScopeForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration
-	#>
+        .EXAMPLE
+            Set-DynamicScopeForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration
+    #>
     [CmdletBinding()]
     param 
     (
@@ -2049,18 +2056,18 @@ function Set-DynamicScopeForMaintenanceConfiguration
 function Set-MigrationStatusForSoftwareUpdateConfiguration
 {
     <#
-		.SYNOPSIS
-			Sets migration status for software update configuration.
-	
-		.DESCRIPTION
-			This function sets migration status for software update configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationMigrationData
-			Software update configration migration data
+        .SYNOPSIS
+            Sets migration status for software update configuration.
+    
+        .DESCRIPTION
+            This function sets migration status for software update configuration.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configration migration data
             
-		.EXAMPLE
-			Set-MigrationStatusForSoftwareUpdateConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData
-	#>
+        .EXAMPLE
+            Set-MigrationStatusForSoftwareUpdateConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData
+    #>
     [CmdletBinding()]
     param 
     (
@@ -2074,6 +2081,11 @@ function Set-MigrationStatusForSoftwareUpdateConfiguration
     $machines = $SoftwareUpdateConfigurationMigrationData.MachinesReadinessDataForSoftwareUpdateConfiguration.Keys
     foreach ($machine in $machines)
     {
+        if ($Global:Machines[$machine].ResourceType -ne $NonAzureMachine -and $Global:Machines[$machine].ErrorCode -match $NotFoundErrorCode)
+        {
+            continue
+        }
+
         if ($SoftwareUpdateConfigurationMigrationData.MachinesReadinessDataForSoftwareUpdateConfiguration[$machine].IsConfigAssignmentRequired -and !$SoftwareUpdateConfigurationMigrationData.MachinesReadinessDataForSoftwareUpdateConfiguration[$machine].IsConfigAssignmentSuccessful)
         {
             $migrationStatus = $PartiallyMigrated
@@ -2159,24 +2171,24 @@ function Get-WindowsTimeZoneFromIANATimeZone
 function Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration 
 {
     <#
-		.SYNOPSIS
-			Creates maintenance configuration for the software update configuration.
-	
-		.DESCRIPTION
-			This function creates equivalent maintenance configuration for the software update configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationMigrationData
-			Software update configration migration data
+        .SYNOPSIS
+            Creates maintenance configuration for the software update configuration.
+    
+        .DESCRIPTION
+            This function creates equivalent maintenance configuration for the software update configuration.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configration migration data
         
         .PARAMETER SoftwareUpdateConfiguration
             Software update configuration
 
         .PARAMETER AutomationAccountResourceId
             Automation Account Resource Id
-	
-		.EXAMPLE
-			Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration -AutomationAccountResourceId AaId
-	#>
+    
+        .EXAMPLE
+            Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration -AutomationAccountResourceId AaId
+    #>
     [CmdletBinding()]
     param 
     (
@@ -2187,7 +2199,7 @@ function Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration
         $SoftwareUpdateConfiguration,
 
         [Parameter(Mandatory = $true, Position = 3)]
-		[String]$AutomationAccountResourceId
+        [String]$AutomationAccountResourceId
     )
 
     try
@@ -2426,30 +2438,30 @@ function Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration
 function Create-ResourceGroupForMaintenanceConfigurations
 {
    <#
-		.SYNOPSIS
-			Create resource group for maintenance configurations.
-	
-		.DESCRIPTION
-			This command will create resource group for maintenance configurations in the same subscription and region as the automation account.
+        .SYNOPSIS
+            Create resource group for maintenance configurations.
+    
+        .DESCRIPTION
+            This command will create resource group for maintenance configurations in the same subscription and region as the automation account.
 
         .PARAMETER AutomationAccountResourceId
-			Automation Account Id.
+            Automation Account Id.
         
         .PARAMETER ResourceGroupNameForMaintenanceConfigurations
-			Resource group for maintenance configurations.
+            Resource group for maintenance configurations.
 
-		.EXAMPLE
-			Create-ResourceGroupForMaintenanceConfigurations -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ResourceGroupNameForMaintenanceConfigurations "rgName"
-	#>
-	[CmdletBinding()]
-	Param
-	(
+        .EXAMPLE
+            Create-ResourceGroupForMaintenanceConfigurations -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ResourceGroupNameForMaintenanceConfigurations "rgName"
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId,
+        [String]$AutomationAccountResourceId,
 
         [Parameter(Mandatory = $true, Position = 2)]
-		[String]$ResourceGroupNameForMaintenanceConfigurations
-	)
+        [String]$ResourceGroupNameForMaintenanceConfigurations
+    )
     
     $response = Invoke-ArmApi-WithPath -Path $AutomationAccountResourceId -ApiVersion $AutomationAccountApiVersion -Method $GET
     $Global:AutomationAccountRegion = $response.Response.location
@@ -2486,24 +2498,24 @@ function Create-ResourceGroupForMaintenanceConfigurations
 function Get-AllSoftwareUpdateConfigurations
 {
     <#
-		.SYNOPSIS
-			Gets all software update configurations.
-	
-		.DESCRIPTION
-			This function gets all software update configurations with support for pagination.
-	
-		.PARAMETER AutomationAccountResourceId
-			Automation account resource id.
+        .SYNOPSIS
+            Gets all software update configurations.
+    
+        .DESCRIPTION
+            This function gets all software update configurations with support for pagination.
+    
+        .PARAMETER AutomationAccountResourceId
+            Automation account resource id.
             
-		.EXAMPLE
-			Get-AllSoftwareUpdateConfigurations -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
+        .EXAMPLE
+            Get-AllSoftwareUpdateConfigurations -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId
-	)
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]$AutomationAccountResourceId
+    )
     $output = $null
     $skip = 0
     do
@@ -2531,30 +2543,30 @@ function Get-AllSoftwareUpdateConfigurations
 function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
 {
     <#
-		.SYNOPSIS
-			Starts migration job for software update configurations.
-	
-		.DESCRIPTION
-			This function starts the migration of software update configurations to maintenance configurations.
-	
-		.PARAMETER AutomationAccountResourceId
-			Automation account resource id.
+        .SYNOPSIS
+            Starts migration job for software update configurations.
+    
+        .DESCRIPTION
+            This function starts the migration of software update configurations to maintenance configurations.
+    
+        .PARAMETER AutomationAccountResourceId
+            Automation account resource id.
 
         .PARAMETER ResourceGroupNameForMaintenanceConfigurations
-			Resource group for maintenance configurations.
+            Resource group for maintenance configurations.
             
-		.EXAMPLE
-			Migrate-AllSoftwareUpdateConfigurationToMaintenanceConfiguration -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ResourceGroupNameForMaintenanceConfigurations "rgName"
-	#>
+        .EXAMPLE
+            Migrate-AllSoftwareUpdateConfigurationToMaintenanceConfiguration -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ResourceGroupNameForMaintenanceConfigurations "rgName"
+    #>
     [CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId,
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]$AutomationAccountResourceId,
 
         [Parameter(Mandatory = $true, Position = 2)]
-		[String]$ResourceGroupNameForMaintenanceConfigurations
-	)
+        [String]$ResourceGroupNameForMaintenanceConfigurations
+    )
 
     try
     {
@@ -2580,7 +2592,6 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
 
         $machines = [System.Collections.ArrayList]@($Global:Machines.Keys)
         
-        $countOfAllMachinesOnboardedToAutomationUpdateManagement = $Global:MachinesRetrievedFromLogAnalyticsWorkspaceWithUpdatesSolution
         $countOfMachinesRetrievedFromAzureDynamicQueriesWhichAreNotOnboardedToAutomationUpdateManagement = $Global:MachinesRetrievedFromAzureDynamicQueriesWhichAreNotOnboardedToAutomationUpdateManagement
         $countOfAzureMachinesWithPeriodicAssessmentEnabled = 0
         $countOfAzuresMachinesWithPatchSettingsEnabled = 0
@@ -2588,6 +2599,7 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
         $countOfAzureMachinesWhereFailedToEnablePeriodicAssessment = 0
         $countOfAzureMachinesWhereFailedToEnablePatchSettings = 0
         $countOfNonAzureArcMachinesWhereFailedToEnablePeriodicAssessment = 0
+        $countOfNotFoundMachines = 0
 
         $countOfAllSoftwareUpdateConfigurations = $softwareUpdateConfigurations.Count
         $countOfMigratedSoftwareUpdateConfigurations = 0
@@ -2598,7 +2610,11 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
 
         foreach ($machine in $machines)
         {
-            if ($Global:Machines[$machine].ResourceType -eq $AzureVM)
+            if ($Global:Machines[$machine].ResourceType -ne $NonAzureMachine -and $Global:Machines[$machine].ErrorCode -match $NotFoundErrorCode)
+            {
+                $countOfNotFoundMachines++
+            }
+            elseif ($Global:Machines[$machine].ResourceType -eq $AzureVM)
             {
                 if ($Global:Machines[$machine].PeriodicAssessmentStatus -eq $Succeeded)
                 {
@@ -2663,7 +2679,6 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
             }
         }
 
-        Write-Output ("Total {0} machines found to be onboarded to Automation Update Management under automation account {1}." -f $countOfAllMachinesOnboardedToAutomationUpdateManagement, $AutomationAccountResourceId)
         if ($countOfMachinesRetrievedFromAzureDynamicQueriesWhichAreNotOnboardedToAutomationUpdateManagement -gt 0)
         {
             Write-Output ("Total {0} azure machines retrieved from azure dynamic queries which are not onboarded to automation update management." -f $countOfMachinesRetrievedFromAzureDynamicQueriesWhichAreNotOnboardedToAutomationUpdateManagement)
@@ -2691,6 +2706,10 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
         if ($countOfNonAzureArcMachinesWhereFailedToEnablePeriodicAssessment -gt 0)
         {
             Write-Output ("Failed to enable periodic assessment for {0} non-azure arc machines linked to software update configurations." -f $countOfNonAzureArcMachinesWhereFailedToEnablePeriodicAssessment)
+        }
+        if ($countOfNotFoundMachines -gt 0)
+        {
+            Write-Output ("{0} azure/arc machines linked to software update configurations are deleted and not found." -f $countOfNotFoundMachines)
         }
 
         Write-Output ("Total {0} software update configurations found under automation account {1}." -f $countOfAllSoftwareUpdateConfigurations, $AutomationAccountResourceId)
@@ -2724,34 +2743,34 @@ function Migrate-AllSoftwareUpdateConfigurationsToMaintenanceConfigurations
 function Migrate-SoftwareUpdateConfigurationToMaintenanceConfiguration
 {
    <#
-		.SYNOPSIS
-			Creates equivalent MRP maintenance configuration from software update configuration.
-	
-		.DESCRIPTION
-			This command will
+        .SYNOPSIS
+            Creates equivalent MRP maintenance configuration from software update configuration.
+    
+        .DESCRIPTION
+            This command will
             1. Set assessment mode properties and patch mode properties for azure/arc-onboarded machines attached to software update configuration or picked up through dynamic queries.
             2. Create maintenance configuration.
             3. Config assigements for machines attached to software update configuration.
             4. Dynamic scoping for maintenance configuration.
-	
-		.PARAMETER SoftwareUpdateConfigurationId
-			Software update configuration Id.
+    
+        .PARAMETER SoftwareUpdateConfigurationId
+            Software update configuration Id.
         
         .PARAMETER AutomationAccountResourceId
-			Automation Account Resource Id.
+            Automation Account Resource Id.
                 
-		.EXAMPLE
-			Migrate-SoftwareUpdateConfigurationToMaintenanceConfiguration -SoftwareUpdateConfigurationId SoftwareUpdateConfigurationId -AutomationAccountResourceId "/subscriptions/{sub}/../accounts/{aaName}"
-	#>
-	[CmdletBinding()]
-	Param
-	(
-		[Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
-		$SoftwareUpdateConfigurationId,
+        .EXAMPLE
+            Migrate-SoftwareUpdateConfigurationToMaintenanceConfiguration -SoftwareUpdateConfigurationId SoftwareUpdateConfigurationId -AutomationAccountResourceId "/subscriptions/{sub}/../accounts/{aaName}"
+    #>
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        $SoftwareUpdateConfigurationId,
 
         [Parameter(Mandatory = $true, Position = 2)]
-		[String]$AutomationAccountResourceId
-	)
+        [String]$AutomationAccountResourceId
+    )
 
     $softwareUpdateConfigurationMigrationData = [SoftwareUpdateConfigurationMigrationData]::new()
 
@@ -2928,24 +2947,24 @@ function Migrate-SoftwareUpdateConfigurationToMaintenanceConfiguration
 function Initialize-JobSchedules
 {
    <#
-		.SYNOPSIS
-			Gets schedules associated with Update Management master runbook and maintains a global list.
-	
-		.DESCRIPTION
-			This command will get & maintain a global list of UM schedules with support for pagination.
+        .SYNOPSIS
+            Gets schedules associated with Update Management master runbook and maintains a global list.
+    
+        .DESCRIPTION
+            This command will get & maintain a global list of UM schedules with support for pagination.
 
         .PARAMETER AutomationAccountResourceId
-			Automation Account Resource Id.
+            Automation Account Resource Id.
 
-		.EXAMPLE
-			Initialize-JobSchedules -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
-	#>
-	[CmdletBinding()]
-	Param
-	(
+        .EXAMPLE
+            Initialize-JobSchedules -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}"
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId
-	)
+        [String]$AutomationAccountResourceId
+    )
     $output = $null
     $skip = 0
     do
@@ -2981,36 +3000,36 @@ function Initialize-JobSchedules
 function Disable-SoftwareUpdateConfiguration
 {
    <#
-		.SYNOPSIS
-			Disables schedule associated with the Software Update Configuration.
-	
-		.DESCRIPTION
-			This command will disable schedule associated with SUC.
+        .SYNOPSIS
+            Disables schedule associated with the Software Update Configuration.
+    
+        .DESCRIPTION
+            This command will disable schedule associated with SUC.
 
         .PARAMETER AutomationAccountResourceId
-			Automation Account Id.
+            Automation Account Id.
         
         .PARAMETER ScheduleName
-			Schedule name.
+            Schedule name.
         
         .PARAMETER SoftwareUpdateConfigurationMigrationData
             Software update configuration migration data.
 
-		.EXAMPLE
-			Disable-SoftwareUpdateConfiguration -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ScheduleName "PatchTuesday_xxxx" -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData
-	#>
-	[CmdletBinding()]
-	Param
-	(
+        .EXAMPLE
+            Disable-SoftwareUpdateConfiguration -AutomationAccountResourceId "/subscriptions/{subId}/resourceGroups/{rgName}/providers/Microsoft.Automation/automationAccounts/{aaName}" -ScheduleName "PatchTuesday_xxxx" -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData
+    #>
+    [CmdletBinding()]
+    Param
+    (
         [Parameter(Mandatory = $true, Position = 1)]
-		[String]$AutomationAccountResourceId,
+        [String]$AutomationAccountResourceId,
 
         [Parameter(Mandatory = $true, Position = 2)]
-		[String]$ScheduleName,
+        [String]$ScheduleName,
         
         [Parameter(Mandatory = $true, Position = 3)]
-		[SoftwareUpdateConfigurationMigrationData]$SoftwareUpdateConfigurationMigrationData
-	)
+        [SoftwareUpdateConfigurationMigrationData]$SoftwareUpdateConfigurationMigrationData
+    )
 
     try
     {

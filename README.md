@@ -26,7 +26,8 @@ This Powershell script is designed to migrate machines and schedules onboarded t
         Optional.
 
 ### PARAMETER ResourceGroupNameForMaintenanceConfigurations
-        Optional. The resource group name should not be more than 36 characters.
+        Optional. Please provide resource group name when migrating software update configurations.
+        The resource group name should not be more than 36 characters.
         The resource group name which will be used for creating a resource group in the same region as the automation account. The maintenance configurations for the migrated software update configurations from the automation account will be residing here.
 
 ### EXAMPLE
