@@ -1640,7 +1640,7 @@ function Populate-AllMachinesOnboardedToUpdateManagement
             Write-Telemetry -Message ("Zero machines retrieved from log analytics workspace. If machines were recently onboarded, please wait for few minutes for machines to start reporting to log analytics workspace") -Level $ErrorLvl
             throw
         }
-        elseif ($laResults.Results.Count -gt 0)
+        elseif ($laResults.Results.Count -gt 0 -or @($laResults.Results).Count -gt 0)
         {
             Write-Telemetry -Message ("Retrieved machines from log analytics workspace.")
 
