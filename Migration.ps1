@@ -2011,10 +2011,19 @@ function Set-DynamicScopeForMaintenanceConfiguration
                     $maintenanceConfigurationDynamicScopingPayload.location = [String]::Empty
                     $maintenanceConfigurationDynamicScopingPayload.properties.filter.resourceGroups = @($parts[4])
                 }
-    
+
+                $locations = [System.Collections.ArrayList]@()
+                foreach ($location in $azureQuery.locations)
+                {
+                    if ($location -ne "brazilus")
+                    {
+                        [void]$locations.Add($location)
+                    }
+                }
+
                 $maintenanceConfigurationDynamicScopingPayload.properties.maintenanceConfigurationId = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
                 $maintenanceConfigurationDynamicScopingPayload.properties.filter.tagSettings = $azureQuery.tagSettings
-                $maintenanceConfigurationDynamicScopingPayload.properties.filter.locations = $azureQuery.locations
+                $maintenanceConfigurationDynamicScopingPayload.properties.filter.locations = $locations
                 $maintenanceConfigurationDynamicScopingPayload.properties.filter.osTypes = @($SoftwareUpdateConfiguration.properties.updateConfiguration.operatingSystem)
                     
                 $dynamicScopeConfigurationAlreadyAssigned = Validate-DynamicScopeConfigurationAlreadyAssigned -DynamicScopeConfigurationAssignments $dynamicConfigurationAssignments -MaintenanceConfigurationDynamicScopingPayload $maintenanceConfigurationDynamicScopingPayload -Scope ("/subscriptions/" + $parts[2])
