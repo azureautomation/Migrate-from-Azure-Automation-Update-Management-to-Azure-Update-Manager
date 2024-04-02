@@ -1856,7 +1856,7 @@ function Validate-DynamicScopeConfigurationAlreadyAssigned
             }
         }
 
-        if ($dynamicScopeConfigurationAssignment.properties.filter.locations.Length -ne $MaintenanceConfigurationDynamicScopingPayload.properties.filter.locations.Length)
+        if ($dynamicScopeConfigurationAssignment.properties.filter.locations.Length -ne $MaintenanceConfigurationDynamicScopingPayload.properties.filter.locations.Count)
         {
             $isequal = $false
             continue
