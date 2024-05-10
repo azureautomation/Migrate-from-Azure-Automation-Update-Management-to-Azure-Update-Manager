@@ -12,7 +12,7 @@
             2.1. It will enable periodic asssessment for all azure/arc machines either attached or picked up through azure dynamic queries of software update configurations under the automation account where the runbook is executing.
             2.2. It will set required patch properties for scheduled patching for all azure machines either attached or picked up through dynamic queries of software update configurations under the automation account where the runbook is executing.
             2.3. It will migrate software update configurations by creating equivalent MRP maintenance configurations. Maintenance configurations will be created in the region where the automation account resides and in the resource group provided as input.
-                2.3.1. Pre/Post tasks of software update configurations will not be migrated.
+                2.3.1. Pre/Post tasks of software update configurations will be migrated. It will create automation webhooks and event grid subscriptions for the same.
                 2.3.2. Saved search queries of software update configurations will not be migrated.
 
     .PARAMETER AutomationAccountResourceId
@@ -116,6 +116,11 @@ $MRPScheduleMaxAllowedDuration = "04:00"
 $MRPScheduleMinAllowedDuration = "01:30"
 $MRPScheduleDateFormat = "yyyy-MM-dd HH:mm"
 
+# Webhook configurations.
+$WebhookExpiryDateFormat = "yyyy-MM-ddTHH:mm:ss"
+$PreTaskWebhook = "PreTaskWebhook"
+$PostTaskWebhook = "PostTaskWebhook"
+
 # SUC to MRP reboot settings mapping.
 $SoftwareUpdateConfigurationToMaintenanceConfigurationPatchDaySetting = @{
     "1" = "First";
@@ -154,12 +159,15 @@ $AutomationAccountApiVersion = "2023-11-01";
 $ResourceGraphApiVersion = "2021-03-01";
 $MaintenanceConfigurationpApiVersion = "2023-04-01";
 $ResourceGroupApiVersion = "2021-04-01";
+$WebhookApiVersion = "2015-10-31";
+$EventGridApiVersion = "2023-12-15-preview"
 
 # HTTP methods.
 $GET = "GET"
 $PATCH = "PATCH"
 $PUT = "PUT"
 $POST = "POST"
+$DELETE = "DELETE"
 
 # ARM endpoints.
 $LinkedWorkspacePath = "{0}/linkedWorkspace"
@@ -168,6 +176,9 @@ $AutomationSchedulesPath = "{0}/Schedules/{1}"
 $JobSchedulesWithPatchRunbookFilterPath = "{0}/JobSchedules/?$filter=properties/runbook/name%20eq%20'Patch-MicrosoftOMSComputers'&`$skip={1}"
 $MaintenanceConfigurationAssignmentPath = "{0}/providers/Microsoft.Maintenance/configurationAssignments/{1}"
 $ResourceGroupPath = "{0}/resourceGroups/{1}"
+$WebhookPath = "{0}/webhooks/{1}"
+$SystemTopicPath = "{0}/providers/Microsoft.EventGrid/systemTopics/{1}"
+$EventSubscriptionPath = "{0}/providers/Microsoft.EventGrid/eventSubscriptions/{1}"
 
 # Error codes.
 $Unknown = "Unknown"
@@ -186,7 +197,7 @@ $ConfigurationAssignmentFailedForMachines = "Configuration assignment failed for
 $FailedToResolveDynamicAzureQueries = "Failed to resolve few dynamic azure queries."
 $FailedToAssignDynamicAzureQueries = "Failed to assign dynamic scopes."
 $SoftwareUpdateConfigurationHasSavedSearchQueries = "The software update configuration has saved search queries for non-azure machines. Please create equivalent dynamic scope manually."
-$SoftwareUpdateConfigurationHasPrePostTasks = "The software update configuration has pre/post tasks which is not supported in Azure Update Manager."
+$SoftwareUpdateConfigurationHasPrePostTasks = "The software update configuration has pre/post tasks which were not successfully assigned to maintenance configuration."
 $SoftwareUpdateConfigurationHasRebootOnlySetting = "The software update configuration has reboot only as the reboot option which is not supported in Azure Update Manager."
 
 # ARG constants.
@@ -218,7 +229,7 @@ $OsTypes = @($Windows, $Linux)
 $PatchSettingsStatus = @($NotAttempted, $Succeeded, $Failed)
 $TelemetryLevels = @($Debug, $Verbose, $Informational, $Warning, $ErrorLvl)
 $MachineResourceTypes = @($VMResourceType, $ArcVMResourceType)
-$HttpMethods = @($GET, $PATCH, $POST, $PUT)
+$HttpMethods = @($GET, $PATCH, $POST, $PUT, $DELETE)
 
 # Time Zones List for Backward Compatability
 $TimeZonesBackwardCompatability = @{
@@ -315,6 +326,15 @@ class DynamicAzureQueriesDataForSoftwareUpdateConfiguration
     [bool]$AllDynamicAzureQueriesSuccessfullyAssigned
 }
 
+# Class for pre and post tasks association details with respect to software update configuration.
+class PrePostDataForSoftwareUpdateConfiguration
+{
+    [bool]$HasPreTasks
+    [bool]$PreTasksAssignedSuccessfully
+    [bool]$HasPostTasks
+    [bool]$PostTasksAssignedSuccessfully
+}
+
 # Class for software update configuration migration details.
 class SoftwareUpdateConfigurationMigrationData
 {
@@ -323,8 +343,8 @@ class SoftwareUpdateConfigurationMigrationData
     [String]$OperatingSystem
     [System.Collections.Hashtable]$MachinesReadinessDataForSoftwareUpdateConfiguration
     [DynamicAzureQueriesDataForSoftwareUpdateConfiguration]$DynamicAzureQueriesStatus
+    [PrePostDataForSoftwareUpdateConfiguration]$PrePostStatus
     [bool]$HasSavedSearchQueries
-    [bool]$HasPrePostTasks
     [String]$MigrationStatus
     [System.Collections.ArrayList]$ErrorMessage
     [bool]$UnderlyingScheduleDisabled
@@ -333,6 +353,7 @@ class SoftwareUpdateConfigurationMigrationData
     {
         $this.MachinesReadinessDataForSoftwareUpdateConfiguration = @{}
         $this.DynamicAzureQueriesStatus = [DynamicAzureQueriesDataForSoftwareUpdateConfiguration]::new()
+        $this.PrePostStatus = [PrePostDataForSoftwareUpdateConfiguration]::new()
         $this.ErrorMessage = [System.Collections.ArrayList]@()
         $this.UnderlyingScheduleDisabled = $false
     }
@@ -362,6 +383,38 @@ class SoftwareUpdateConfigurationMigrationData
         $this.DynamicAzureQueriesStatus.HasDynamicAzureQueries = $hasDynamicAzureQueries
         $this.DynamicAzureQueriesStatus.AllDynamicAzureQueriesSuccessfullyResolved = $allDynamicAzureQueriesSuccessfullyResolved
         $this.DynamicAzureQueriesStatus.AllDynamicAzureQueriesSuccessfullyAssigned = $allDynamicAzureQueriesSuccessfullyAssigned
+    }
+
+    [void] UpdatePrePostStatus(
+        [bool]$hasPreTasks,
+        [bool]$preTasksAssignedSuccessfully,
+        [bool]$hasPostTasks,
+        [bool]$postTasksAssignedSuccessfully)
+    {
+        <#
+            .SYNOPSIS
+                Updates status of pre and post tasks in regards to software update configuration.
+        
+            .DESCRIPTION
+                This function will update status of pre and post tasks in regards to software update configuration.
+        
+            .PARAMETER hasPreTasks
+                Whether software update configuration has pre tasks.        
+        
+            .PARAMETER preTasksAssignedSuccessfully
+                Whether pre tasks successfully assigned to maintenance configuration.
+
+            .PARAMETER hasPostTasks
+                Whether software update configuration has post tasks.
+            
+            .PARAMETER postTasksAssignedSuccessfully
+                Whether post tasks successfully assigned to maintenance configuration.            
+        #>
+
+        $this.PrePostStatus.HasPreTasks = $hasPreTasks
+        $this.PrePostStatus.PreTasksAssignedSuccessfully = $preTasksAssignedSuccessfully
+        $this.PrePostStatus.HasPostTasks = $hasPostTasks
+        $this.PrePostStatus.PostTasksAssignedSuccessfully = $postTasksAssignedSuccessfully
     }
 
     [void] UpdateMachineStatusForSoftwareUpdateConfiguration(
@@ -580,6 +633,86 @@ $DisableAutomationSchedule = @"
     }
 }
 "@
+
+$CreateWebhook = @"
+{
+    "name": null,
+    "properties": {
+        "isEnabled": true,
+        "uri": null,
+        "expiryTime": null,
+        "runbook": {
+            "name": null
+        },
+        "parameters":{
+        }
+    }
+}
+"@
+
+$CreateSystemTopic = @"
+{
+    "name": null,
+    "type": "Microsoft.EventGrid/systemTopics",
+    "location": null,
+    "properties": {
+      "source": null,
+      "topicType": "Microsoft.Maintenance.MaintenanceConfigurations"
+    }
+}
+"@
+
+$CreatePreMaintenanceEventSubscription = @"
+{
+    "name": null,
+    "properties": {
+      "topic": null,
+      "destination": {
+        "endpointType": "WebHook",
+        "properties": {
+          "endpointUrl": null,
+          "maxEventsPerBatch": 1,
+          "preferredBatchSizeInKilobytes": 64
+        }
+      },
+      "filter": {
+        "includedEventTypes": [
+          "Microsoft.Maintenance.PreMaintenanceEvent"
+        ],
+        "advancedFilters": [],
+        "enableAdvancedFilteringOnArrays": true
+      },
+      "labels": [],
+      "eventDeliverySchema": "EventGridSchema"
+    }
+}
+"@
+
+$CreatePostMaintenanceEventSubscription = @"
+{
+    "name": null,
+    "properties": {
+      "topic": null,
+      "destination": {
+        "endpointType": "WebHook",
+        "properties": {
+          "endpointUrl": null,
+          "maxEventsPerBatch": 1,
+          "preferredBatchSizeInKilobytes": 64
+        }
+      },
+      "filter": {
+        "includedEventTypes": [
+          "Microsoft.Maintenance.PostMaintenanceEvent"
+        ],
+        "advancedFilters": [],
+        "enableAdvancedFilteringOnArrays": true
+      },
+      "labels": [],
+      "eventDeliverySchema": "EventGridSchema"
+    }
+}
+"@
 # End of Payloads.
 
 $MachinesOnboaredToAutomationUpdateManagementQuery = 'Heartbeat | where Solutions contains "updates" | distinct Computer, ResourceId, ResourceType, OSType'
@@ -590,6 +723,7 @@ $Global:JobSchedules = @{}
 $Global:SoftwareUpdateConfigurationsResourceIDs = @{}
 $Global:MachinesRetrievedFromLogAnalyticsWorkspaceWithUpdatesSolution = 0
 $Global:MachinesRetrievedFromAzureDynamicQueriesWhichAreNotOnboardedToAutomationUpdateManagement = 0
+$Global:ResourceGroupForMaintenanceConfigurations = $null
 
 function Write-Telemetry
 {
@@ -1945,9 +2079,6 @@ function Set-DynamicScopeForMaintenanceConfiguration
         .PARAMETER SoftwareUpdateConfiguration
             Software update configuration
 
-        .PARAMETER Scope
-            Scope of dynamic assignment.
-
         .EXAMPLE
             Set-DynamicScopeForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration
     #>
@@ -2020,7 +2151,7 @@ function Set-DynamicScopeForMaintenanceConfiguration
                         [void]$locations.Add($location)
                     }
                 }
-
+    
                 $maintenanceConfigurationDynamicScopingPayload.properties.maintenanceConfigurationId = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
                 $maintenanceConfigurationDynamicScopingPayload.properties.filter.tagSettings = $azureQuery.tagSettings
                 $maintenanceConfigurationDynamicScopingPayload.properties.filter.locations = $locations
@@ -2059,6 +2190,165 @@ function Set-DynamicScopeForMaintenanceConfiguration
     if ($countOfFailedDynamicAssignments -eq 0 -and $SoftwareUpdateConfigurationMigrationData.DynamicAzureQueriesStatus.AllDynamicAzureQueriesSuccessfullyResolved)
     {
         $SoftwareUpdateConfigurationMigrationData.UpdateDynamicAzureQueriesStatus($SoftwareUpdateConfigurationMigrationData.DynamicAzureQueriesStatus.HasDynamicAzureQueries, $SoftwareUpdateConfigurationMigrationData.DynamicAzureQueriesStatus.AllDynamicAzureQueriesSuccessfullyResolved, $true)
+    }
+}
+
+function Set-PrePostTasksForMaintenanceConfiguration
+{
+    <#
+        .SYNOPSIS
+            Sets pre and post tasks for maintenance configuration.
+    
+        .DESCRIPTION
+            This function sets pre and post tasks for maintenance configuration.
+    
+        .PARAMETER SoftwareUpdateConfigurationMigrationData
+            Software update configration migration data.
+
+        .PARAMETER SoftwareUpdateConfiguration
+            Software update configuration
+
+        .PARAMETER WebhookExpiryTime
+            Webhook expiry time.
+
+        .PARAMETER TaskType
+            Pre or post task type
+
+        .EXAMPLE
+            Set-PrePostTasksForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration SoftwareUpdateConfiguration -WebhookExpiryTime WebhookExpiryTime -TaskType TaskType
+    #>
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $true, Position = 1, ValueFromPipeline = $true)]
+        [SoftwareUpdateConfigurationMigrationData]$SoftwareUpdateConfigurationMigrationData,
+
+        [Parameter(Mandatory = $true, Position = 2, ValueFromPipeline = $true)]
+        $SoftwareUpdateConfiguration,
+
+        [Parameter(Mandatory = $true, Position = 3, ValueFromPipeline = $true)]
+        $WebhookExpiryTime,
+
+        [Parameter(Mandatory = $true, Position = 4, ValueFromPipeline = $true)]
+        $TaskType
+    )
+
+    try
+    {
+        $webhookPayload = ConvertFrom-Json $CreateWebhook
+        $webhookPayload.name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-" + $TaskType
+        $webhookPayload.properties.expiryTime = $WebhookExpiryTime
+        $taskAssignedSuccessfully = $false
+
+        if ($TaskType -eq $PreTaskWebhook)
+        {            
+            $webhookPayload.properties.runbook.name = $SoftwareUpdateConfiguration.properties.tasks.preTask.source
+            $webhookPayload.properties.parameters = $SoftwareUpdateConfiguration.properties.tasks.preTask.parameters
+            $maintenanceEventSubscriptionPayload = ConvertFrom-Json $CreatePreMaintenanceEventSubscription
+        }
+        elseif ($TaskType -eq $PostTaskWebhook)
+        {
+            $webhookPayload.properties.runbook.name = $SoftwareUpdateConfiguration.properties.tasks.postTask.source
+            $webhookPayload.properties.parameters = $SoftwareUpdateConfiguration.properties.tasks.postTask.parameters
+            $maintenanceEventSubscriptionPayload = ConvertFrom-Json $CreatePostMaintenanceEventSubscription
+        }
+
+        $webhookResourceId = ($WebhookPath -f $AutomationAccountResourceId, $webhookPayload.name)
+        $webhookPayload = ConvertTo-Json $webhookPayload -Depth $MaxDepth
+
+        try
+        {
+            # First check if webhook exists and if yes then delete it as we can't get the uri token for existing webhook to associate with pre/post event subscription.
+            $response = Invoke-ArmApi-WithPath -Path $webhookResourceId -ApiVersion $WebhookApiVersion -Method $GET            
+        }
+        catch [Exception]
+        {
+            # We will end up here only if webhook does not exist from before. 
+        }
+
+        # Webhook already exists. We should delete it.
+        if ($null -ne $response.Response.id -and $response.Response.id -eq $webhookResourceId)
+        {
+            $response = Invoke-ArmApi-WithPath -Path $webhookResourceId -ApiVersion $WebhookApiVersion -Method $DELETE
+            if ($response.Status -eq $Succeeded)
+            {
+                Write-Telemetry -Message ("Deleted existing webhook {0}." -f $webhookResourceId)
+            }
+            else
+            {
+                # We cannot update the maintenance events in this case because we do not have the uri of the existing webhook.
+                # Previously assigned pre and post tasks will continue to work for the maintenance configuration.
+                throw $response.ErrorMessage
+            }
+        }
+    
+        # Create new webhook.
+        $response = Invoke-ArmApi-WithPath -Path $webhookResourceId -ApiVersion $WebhookApiVersion -Method $PUT -Payload $webhookPayload
+        if ($null -ne $response.Response.id)
+        {
+            Write-Telemetry -Message ("Webhook {0} for {1} created for maintenance configuration {2}." -f $webhookResourceId, $TaskType, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId)    
+        }
+        else
+        {
+            Write-Telemetry -Message ("Failed to create webhook {0} for {1} for maintenance configuration {2} with error code {3} and error message {4}." -f $webhookResourceId, $TaskType, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $response.ErrorCode, $response.ErrorMessage) -Level $ErrorLvl
+            throw $response.ErrorMessage
+        }
+        
+        # Create system topic.
+        $webhookUri = $response.Response.properties.uri
+        $systemTopicPayload = ConvertFrom-Json $CreateSystemTopic
+        $systemTopicPayload.Name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-SystemTopic"
+        $systemTopicPayload.location = $Global:AutomationAccountRegion
+        $systemTopicPayload.properties.source = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
+        $systemTopicResourceId = ($SystemTopicPath -f $Global:ResourceGroupForMaintenanceConfigurations, $systemTopicPayload.Name)
+        $systemTopicPayload =  ConvertTo-Json $systemTopicPayload -Depth $MaxDepth
+
+        $response = Invoke-ArmApi-WithPath -Path $systemTopicResourceId -ApiVersion $EventGridApiVersion -Method $PUT -Payload $systemTopicPayload
+        if ($null -ne $response.Response.id)
+        {
+            Write-Telemetry -Message ("System topic {0} created for maintenance configuration {1}." -f $systemTopicResourceId, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId)
+        }
+        else
+        {
+            Write-Telemetry -Message ("Failed to create system topic {0} for maintenance configuration {1} with error code {2} and error message {3}." -f $systemTopicResourceId, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $response.ErrorCode, $response.ErrorMessage) -Level $ErrorLvl
+            throw $response.ErrorMessage
+        }
+
+        # Create pre/post maintenance subscription event.
+        $maintenanceEventSubscriptionPayload.name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-" + $TaskType
+        $maintenanceEventSubscriptionPayload.properties.topic = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
+        $maintenanceEventSubscriptionPayload.properties.destination.properties.endpointUrl = $webhookUri
+        $maintenanceSubscriptionEventResourceId = ($EventSubscriptionPath -f $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $maintenanceEventSubscriptionPayload.name)
+        $maintenanceEventSubscriptionPayload = ConvertTo-Json $maintenanceEventSubscriptionPayload -Depth $MaxDepth
+
+        $response = Invoke-ArmApi-WithPath -Path $maintenanceSubscriptionEventResourceId -ApiVersion $EventGridApiVersion -Method $PUT -Payload $maintenanceEventSubscriptionPayload
+        if ($null -ne $response.Response.id)
+        {
+            Write-Telemetry -Message ("Event subcription {0} for {1} created for maintenance configuration {2}." -f $maintenanceSubscriptionEventResourceId, $TaskType, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId)
+        }
+        else
+        {
+            Write-Telemetry -Message ("Failed to create Event subcription {0} for {1} for maintenance configuration {2} with error code {3} and error message {4}." -f $maintenanceSubscriptionEventResourceId, $TaskType, $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $response.ErrorCode, $response.ErrorMessage) -Level $ErrorLvl
+            throw $response.ErrorMessage
+        }
+
+        $taskAssignedSuccessfully = $true
+    }
+    catch [Exception]
+    {
+        $exceptionMessage = $_.Exception.Message
+        Write-Telemetry -Message ("Maintenance configuration [{0}] failed with an unhandled exception: {1} while assigning pre and post tasks." -f $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $exceptionMessage) -Level $ErrorLvl
+    }
+    finally
+    {
+        if ($TaskType -eq $PreTaskWebhook)
+        {
+            $SoftwareUpdateConfigurationMigrationData.UpdatePrePostStatus($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks, $taskAssignedSuccessfully, $SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPostTasks, $SoftwareUpdateConfigurationMigrationData.PrePostStatus.PostTasksAssignedSuccessfully)
+        }
+        elseif ($TaskType -eq $PostTaskWebhook)
+        {
+            $SoftwareUpdateConfigurationMigrationData.UpdatePrePostStatus($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks, $SoftwareUpdateConfigurationMigrationData.PrePostStatus.PreTasksAssignedSuccessfully, $SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPostTasks, $taskAssignedSuccessfully)
+        }
     }
 }
 
@@ -2126,6 +2416,13 @@ function Set-MigrationStatusForSoftwareUpdateConfiguration
     {
         $migrationStatus = $PartiallyMigrated
         [void]$errorMessage.Add($SoftwareUpdateConfigurationHasSavedSearchQueries)
+    }
+
+    if (($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks -and !$SoftwareUpdateConfigurationMigrationData.PrePostStatus.PreTasksAssignedSuccessfully) -or 
+        ($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPostTasks -and !$SoftwareUpdateConfigurationMigrationData.PrePostStatus.PostTasksAssignedSuccessfully))
+    {
+        $migrationStatus = $PartiallyMigrated
+        [void]$errorMessage.Add($SoftwareUpdateConfigurationHasPrePostTasks)
     }
 
     $SoftwareUpdateConfigurationMigrationData.MigrationStatus = $migrationStatus
@@ -2400,9 +2697,9 @@ function Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration
             $maintenanceConfigurationPayload.properties.installPatches.rebootSetting = $SoftwareUpdateConfigurationToMaintenanceConfigurationRebootSetting[$SoftwareUpdateConfiguration.properties.updateConfiguration.linux.rebootSetting]
         }
         
-        $maintenanceConfigurationPayload = ConvertTo-Json $maintenanceConfigurationPayload -Depth $MaxDepth
+        $maintenanceConfigurationPayloadJson = ConvertTo-Json $maintenanceConfigurationPayload -Depth $MaxDepth
     
-        $response = Invoke-ArmApi-WithPath -Path $maintenanceConfigurationResourceId -ApiVersion $MaintenanceConfigurationpApiVersion -Method $PUT -Payload $maintenanceConfigurationPayload
+        $response = Invoke-ArmApi-WithPath -Path $maintenanceConfigurationResourceId -ApiVersion $MaintenanceConfigurationpApiVersion -Method $PUT -Payload $maintenanceConfigurationPayloadJson
     
         if ($response.Status -eq $Failed)
         {
@@ -2428,6 +2725,36 @@ function Create-MaintenanceConfigurationFromSoftwareUpdateConfiguration
     if ($SoftwareUpdateConfigurationMigrationData.DynamicAzureQueriesStatus.HasDynamicAzureQueries)
     {
         Set-DynamicScopeForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration $SoftwareUpdateConfiguration
+    }
+
+    if ($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks -or $SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPostTasks)
+    {
+        if ($null -ne $maintenanceConfigurationPayload.properties.maintenanceWindow.expirationDateTime)
+        {
+            $maintenanceConfigurationExpirationTicks = ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]$maintenanceConfigurationPayload.properties.maintenanceWindow.expirationDateTime, $systemTimeZone)).Ticks
+        }
+
+        $webhookMaximumExpirationTicks = ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $systemTimeZone)).AddYears(10).AddDays(-1).Ticks
+
+        # Maximum expiry time for a webhook is upto 10 years. In case schedule is set to never end or end after 10 years, we should pick the maximum expiry time possible for webhooks.
+        if ($null -eq $maintenanceConfigurationPayload.properties.maintenanceWindow.expirationDateTime -or $maintenanceConfigurationExpirationTicks -gt $webhookMaximumExpirationTicks)
+        {
+            $webhookExpiryTime = Get-Date -Date ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $systemTimeZone)).AddYears(10).AddDays(-1) -Format $WebhookExpiryDateFormat
+        }
+        else
+        {
+            $webhookExpiryTime = Get-Date -Date ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]$maintenanceConfigurationPayload.properties.maintenanceWindow.expirationDateTime, $systemTimeZone)) -Format $WebhookExpiryDateFormat
+        }
+        
+        if ($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks)
+        {
+            Set-PrePostTasksForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration $SoftwareUpdateConfiguration -WebhookExpiryTime $webhookExpiryTime -TaskType $PreTaskWebhook
+        }
+
+        if ($SoftwareUpdateConfigurationMigrationData.PrePostStatus.HasPostTasks)
+        {
+            Set-PrePostTasksForMaintenanceConfiguration -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData -SoftwareUpdateConfiguration $SoftwareUpdateConfiguration -WebhookExpiryTime $webhookExpiryTime -TaskType $PostTaskWebhook
+        }
     }
 
     Set-MigrationStatusForSoftwareUpdateConfiguration -SoftwareUpdateConfigurationMigrationData $SoftwareUpdateConfigurationMigrationData
@@ -2488,6 +2815,7 @@ function Create-ResourceGroupForMaintenanceConfigurations
     if ($null -ne $response.Response.id)
     {
         Write-Telemetry -Message ("Resource group {0} already exists." -f $response.Response.id)
+        $Global:ResourceGroupForMaintenanceConfigurations = $response.Response.id
         return
     }
     
@@ -2501,6 +2829,7 @@ function Create-ResourceGroupForMaintenanceConfigurations
     else
     {
         Write-Telemetry -Message ("Resource group {0} created successfully." -f $response.Response.id)
+        $Global:ResourceGroupForMaintenanceConfigurations = $response.Response.id
     }
 }
 
@@ -2809,18 +3138,22 @@ function Migrate-SoftwareUpdateConfigurationToMaintenanceConfiguration
             return $softwareUpdateConfigurationMigrationData
         }
     
-        if (($null -ne $softwareUpdateConfiguration.properties.tasks.preTask) -or ($null -ne $softwareUpdateConfiguration.properties.tasks.postTask))
+        if ($null -ne $softwareUpdateConfiguration.properties.tasks.preTask)
         {
-            Write-Telemetry -Message ("Skipping software update configuration {0} as it has pre/post tasks. " -f $softwareUpdateConfiguration.id ) -Level $Warning
-            $softwareUpdateConfigurationMigrationData.HasPrePostTasks = $true
-            $softwareUpdateConfigurationMigrationData.MigrationStatus = $NotMigrated
-            [void]$softwareUpdateConfigurationMigrationData.ErrorMessage.Add($SoftwareUpdateConfigurationHasPrePostTasks)
-            return $softwareUpdateConfigurationMigrationData
-
+            $softwareUpdateConfigurationMigrationData.UpdatePrePostStatus($true, $false, $false, $false)
         }
         else
         {
-            $softwareUpdateConfigurationMigrationData.HasPrePostTasks = $false
+            $softwareUpdateConfigurationMigrationData.UpdatePrePostStatus($false, $false, $false, $false)
+        }
+        
+        if ($null -ne $softwareUpdateConfiguration.properties.tasks.postTask)
+        {
+            $softwareUpdateConfigurationMigrationData.UpdatePrePostStatus($softwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks, $false, $true, $false)
+        }
+        else 
+        {
+            $softwareUpdateConfigurationMigrationData.UpdatePrePostStatus($softwareUpdateConfigurationMigrationData.PrePostStatus.HasPreTasks, $false, $false, $false)
         }
     
         if ($null -ne $softwareUpdateConfiguration.properties.updateConfiguration.targets.nonAzureQueries -and $softwareUpdateConfiguration.properties.updateConfiguration.targets.nonAzureQueries.Count -gt 0)
@@ -3067,7 +3400,14 @@ function Disable-SoftwareUpdateConfiguration
 # Avoid clogging streams with Import-Modules outputs.
 $VerbosePreference = "SilentlyContinue"
 
-$azConnect = Connect-AzAccount -Identity -AccountId $UserManagedServiceIdentityClientId -SubscriptionId (Parse-ArmId -ResourceId $AutomationAccountResourceId).Subscription
+$AutomationAccountAzureEnvironment = Get-AutomationVariable -Name "AutomationAccountAzureEnvironment"
+if ($null -eq $AutomationAccountAzureEnvironment)
+{
+    # If AutomationAccountAzureEnvironment variable is not set, default to public cloud.
+    $AutomationAccountAzureEnvironment = "AzureCloud"
+}
+
+$azConnect = Connect-AzAccount -Identity -AccountId $UserManagedServiceIdentityClientId -SubscriptionId (Parse-ArmId -ResourceId $AutomationAccountResourceId).Subscription -Environment $AutomationAccountAzureEnvironment
 if ($null -eq $azConnect)
 {
     Write-Telemetry -Message ("Failed to connect with user managed identity. Please ensure that the user managed idenity is added to the automation account and having the required role assignments.") -Level $ErrorLvl

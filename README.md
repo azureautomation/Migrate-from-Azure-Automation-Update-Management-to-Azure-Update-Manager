@@ -10,8 +10,8 @@ This Powershell script is designed to migrate machines and schedules onboarded t
     	1. It will enable periodic asssessment for all azure/arc machines either attached or picked up through azure dynamic queries of software update configurations under the automation account where the runbook is executing.
         2. It will set required patch properties for scheduled patching for all azure machines either attached or picked up through dynamic queries of software update configurations under the automation account where the runbook is executing.
         3. It will migrate software update configurations by creating equivalent MRP maintenance configurations. Maintenance configurations will be created in the region where the automation account resides and in the resource group provided as input.
-        	1. Pre/Post tasks of software update configurations will not be migrated.
-            2. Saved search queries of software update configurations will not be migrated.
+        	1. Pre/Post tasks of software update configurations will be migrated. It will create automation webhooks and event grid subscriptions for the same.
+                2. Saved search queries of software update configurations will not be migrated.
 
 ### PARAMETER AutomationAccountResourceId
         Mandatory. Automation Account Resource Id.
