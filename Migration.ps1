@@ -2297,7 +2297,8 @@ function Set-PrePostTasksForMaintenanceConfiguration
         # Create system topic.
         $webhookUri = $response.Response.properties.uri
         $systemTopicPayload = ConvertFrom-Json $CreateSystemTopic
-        $systemTopicPayload.Name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-SystemTopic"
+        # System Topic name only allows alphanumeric characters and hyphens.
+        $systemTopicPayload.Name = ($SoftwareUpdateConfiguration.name -replace "[^a-zA-Z0-9-]") + "-" + $MigrationTag + "-SystemTopic"
         $systemTopicPayload.location = $Global:AutomationAccountRegion
         $systemTopicPayload.properties.source = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
         $systemTopicResourceId = ($SystemTopicPath -f $Global:ResourceGroupForMaintenanceConfigurations, $systemTopicPayload.Name)
