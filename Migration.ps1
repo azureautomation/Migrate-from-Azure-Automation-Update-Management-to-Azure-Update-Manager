@@ -2297,7 +2297,8 @@ function Set-PrePostTasksForMaintenanceConfiguration
         # Create system topic.
         $webhookUri = $response.Response.properties.uri
         $systemTopicPayload = ConvertFrom-Json $CreateSystemTopic
-        $systemTopicPayload.Name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-SystemTopic"
+        # System Topic name only allows alphanumeric characters and hyphens.
+        $systemTopicPayload.Name = ($SoftwareUpdateConfiguration.name -replace "[^a-zA-Z0-9-]") + "-" + $MigrationTag + "-SystemTopic"
         $systemTopicPayload.location = $Global:AutomationAccountRegion
         $systemTopicPayload.properties.source = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
         $systemTopicResourceId = ($SystemTopicPath -f $Global:ResourceGroupForMaintenanceConfigurations, $systemTopicPayload.Name)
@@ -2314,8 +2315,8 @@ function Set-PrePostTasksForMaintenanceConfiguration
             throw $response.ErrorMessage
         }
 
-        # Create pre/post maintenance subscription event.
-        $maintenanceEventSubscriptionPayload.name = $SoftwareUpdateConfiguration.name + "-" + $MigrationTag + "-" + $TaskType
+        # Create pre/post maintenance subscription event. Event Subscription name only allows alphanumeric characters and hyphens.
+        $maintenanceEventSubscriptionPayload.name = ($SoftwareUpdateConfiguration.name -replace "[^a-zA-Z0-9-]") + "-" + $MigrationTag + "-" + $TaskType
         $maintenanceEventSubscriptionPayload.properties.topic = $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId
         $maintenanceEventSubscriptionPayload.properties.destination.properties.endpointUrl = $webhookUri
         $maintenanceSubscriptionEventResourceId = ($EventSubscriptionPath -f $SoftwareUpdateConfigurationMigrationData.MaintenanceConfigurationResourceId, $maintenanceEventSubscriptionPayload.name)
